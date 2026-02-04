@@ -1,10 +1,16 @@
 ---
 title: "madRich"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{madRich}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
+author: "Madison S. Cox, mscox@uw.edu"
+date: "version `r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: no
+editor_options:
+  chunk_output_type: console
+urlcolor: blue
 ---
 
 ```{r, include = FALSE}
