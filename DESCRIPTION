@@ -31,4 +31,7 @@ Imports:
     umap
 biocViews:
 Suggests: 
+    knitr,
+    rmarkdown,
     SEARchways
+VignetteBuilder: knitr

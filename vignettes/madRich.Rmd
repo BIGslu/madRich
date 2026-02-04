@@ -1,0 +1,169 @@
+---
+title: "madRich"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{madRich}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Introduction
+The purpose of this package is to aid in interpretation of rich and complex enrichment or GSEA results. The first step is to cluster gene sets based on the overlap coefficient, which is a metric of similarity that does not punish differences in gene set size. This allows child sets in hierarchical references like GO to cluster with their parents. The package then allows various visualizations of clusters to help summarize biological functions that might be contained within a long list of significantly enriched gene sets. 
+
+# Installation
+The package can be installed from GitHub using:
+```{r eval = FALSE}
+install.packages("devtools")
+devtools::install_github("BIGslu/madRich")
+```
+
+# Usage Example
+```{r setup}
+library(madRich)
+```
+
+## Sample Enrichment
+This is a hypergeometric enrichment calculated with the SEARchways package. It uses a gene list from that package, and performs an enrichment against the C2: Canonical Pathways and C5: GO Biological Processes from the Broad Institute's Molecular Signatures Database ([MSigDB](https://www.gsea-msigdb.org/gsea/msigdb)). 
+```{r}
+gene_list2 <- list(HRV1 = names(SEARchways::example.gene.list[[1]]),
+                   HRV2 = names(SEARchways::example.gene.list[[2]]))
+df1 <- SEARchways::BIGprofiler(gene_list=gene_list2, 
+                               collection="C2", subcollection ="CP", ID="ENSEMBL")
+df2 <- SEARchways::BIGprofiler(gene_list=gene_list2, 
+                               collection="C5", subcollection="GO:BP", ID="ENSEMBL")
+enrichment <- dplyr::bind_rows(df1, df2)
+```
+
+This results looks like this:
+```{r}
+head(enrichment)
+```
+
+Whatever your enrichment format, the following steps require a data frame with the following columns: pathway, k/K (for hypergeometric) or NES (for GSEA), FDR (if applying a cutoff), collection & subcollection (if not providing a custom database). If you are enriching against a custom database rather than Broad databases, you must provide this as a data frame with the columns "gs_name" for pathways and "gene" for member genes. 
+
+## Guiding the Number of Gene Set Clusters
+
+This function creates a list of objects to help guide the choice of tree cut height when finding gene set clusters with clusterSets(). It requires an enrichment or GSEA input. For hypergeometric enrichment, it will provide a single plot and "best" cut height value. For GSEA, it will provide a sign-separated result (one plot and height for positive NES pathways, one for negative). 
+
+The function requires either (A) a vector of Broad gene set collections represented in the enrichment result with a named vector of subcollections, or (B), a custom database frame with the columns "gs_name" for pathways and "gene" for member genes.
+
+Also required is a vector of tree cut heights for hclust to calculate values of K and sillhouette scores. 
+
+```{r}
+cut_height_test1 <- chooseCutHeight(df = enrichment, 
+                                   enrich_method="hypergeometric",
+                                   ID = "ENSEMBL",
+                                   collections = c("C5", "C2"),
+                                   subcollections = c("C2" = "CP", "C5" = "GO:BP"),
+                                   hclust_heights = c(0.3,0.5,0.7,0.9),
+                                   group_name = "HRV1",
+                                   fdr_cutoff = 0.4,
+                                   kK_cutoff = 0.03)
+```
+
+The first is the formatted database with only the pathways passing any applied strength/significance cutoffs
+```{r}
+head(cut_height_test1$database_format)
+```
+
+The second is a summary of k at the provided cut heights (sign separated in the case of GSEA input).
+```{r}
+cut_height_test1$summary_df
+```
+The third is a plot showing average silhouette score by number of clusters. 
+
+```{r, fig.width=12, fig.height=4}
+cut_height_test1$silhouette_score_plot
+```
+And the last is a "best" cut height selected from the input vector of possible cut heights that maximized silhouette width.
+```{r}
+cut_height_test1$best_height
+```
+
+It may benefit to run this function through several times, narrowing in on a cut height that feels best. In our first example, 0.9 was the "best" height. According to our plot, across all possible values of k the average silhouette width is optimized at k = 122 (height between 0.3 and 0.5). BUT, there is also a plateau that matters here. There is not a ton if difference in silhouette score between k ~ 40 and k ~ 140. But reducing our gene set list from ~ 200 sets to ~ 140 clusters isn't super helpful. Dropping from ~ 200 sets to ~ 20 clusters WOULD be. So let's try several values above 0.9 to see if we can get a lower and more useful value for k.  
+```{r}
+cut_height_test2 <- chooseCutHeight(df = enrichment, 
+                                   enrich_method="hypergeometric",
+                                   ID = "ENSEMBL",
+                                   collections = c("C5", "C2"),
+                                   subcollections = c("C2" = "CP", "C5" = "GO:BP"),
+                                   hclust_heights = c(0.95, 0.96, 0.97),
+                                   group_name = "HRV1",
+                                   fdr_cutoff = 0.4,
+                                   kK_cutoff = 0.03)
+```
+
+```{r}
+cut_height_test2$best_height
+```
+
+```{r echo = F, fig.width=12, fig.height=4}
+cut_height_test2$silhouette_score_plot
+```
+A cut height of 0.96 gets us k = 30, which is pretty close to a local maximum on the plot. So I am going to go with that. You may have reasons to choose a value that is NOT the overall (or even a local) maximum silhouette score value. You may find that you need more clusters to break down a complicated enrichment. Or the "optimal" value may provide too FEW clusters to be useful for your analysis. You can see that there are several local maxima along the curve of values of k. These are relatively better clustering solutions than their neighbors, so try to choose a local maximum even if deviating from the absolute maximum. And keep in mind the possible diminishing returns of adding more clusters when your plot has a large plateau like this one. 
+
+## Clustering Gene Sets
+This function will generate the final clusters. Its inputs are very similar to the previous, and the output will provide the data for all the visualizations in this package. 
+```{r}
+cluster_solution <- clusterSets(df = enrichment, 
+                                enrich_method="hypergeometric",
+                                ID = "ENSEMBL",
+                                collections = c("C5", "C2"),
+                                subcollections = c("C2" = "CP", "C5" = "GO:BP"),
+                                hclust_height = cut_height_test2$best_height,
+                                group_name = "HRV1",
+                                fdr_cutoff = 0.4,
+                                kK_cutoff = 0.03)
+```
+
+## Plotting Clusters 
+### Dendrogram
+
+The dendrogram shows the tree generated in hclust, with node colors and numbers showing cluster assignment of each gene set.
+```{r, fig.width=8, fig.height=24}
+clusterDendro(cluster_solution)
+```
+
+### Scatterplot
+
+The scatterplot shows a dimension reduction (tSNE, UMAP, or PCoA) of clustered sets. The size of circles in the scatterplot can indicate significance (-log10(pval)) or gene set size. I think tSNE does the best job of visually dispersing the points, but your ability to use tSNE or UMAP may depend on the underlying variability in your particular clustering solution. 
+```{r, fig.width=20, fig.height=12}
+clusterScatter(cluster_solution, dimred = "tSNE", scores = "pvalue")
+```
+
+### Treemap
+
+The treemap plot shows gene set clusters together and sizes boxes based on either gene set size or -log10(pval). It is a good way to visualize the clusters, their member sets, and their relative significance. In this case, I can see that my cluster 1 is a large and possibly informative cluster. So I will focus on that one for the next visualization. 
+```{r, fig.width=12, fig.height=12}
+clusterTreemap(cluster_solution, scores = "pvalue")
+```
+
+### Wordclouds
+These plots take text from gene set names and descriptions and generate word clouds. 
+```{r}
+wordclouds <- clusterWordclouds(cluster_solution)
+```
+So wordclouds$wordcloud_names[["1]] would have word clouds made from the gene set NAMES of sets in cluster 1. The function removes common words like articles, but additional words can be removed with the "rmwords" parameter in clusterWordclouds. 
+```{r fig.width=6, fig.height=6}
+wordclouds$wordcloud_names[["1"]]
+```
+This gives us some insight into what biological function might be represented by this subset of our enrichment result. There is also a "wordcloud_descriptions" list which creates wordclouds based on the gs_description column in the Broad databases. And "wordclouds_both" list which uses both set names and their descriptions. Note that these word clouds are only useful for a custom database if you have well-curated gs_name and gs_description columns in the input. 
+
+```{r fig.width=6, fig.height=6}
+wordclouds$wordcloud_names[["18"]]
+wordclouds$wordcloud_descriptions[["18"]]
+wordclouds$wordcloud_both[["18"]]
+```
+
+
+```{r}
+sessionInfo()
+```
+

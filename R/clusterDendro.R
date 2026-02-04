@@ -53,7 +53,7 @@ clusterDendro <- function(
     dplyr::mutate(label = stringr::str_replace_all(label, "_", " "),
                   label = tolower(label))
 
-  label_data <- dplyr::bind_cols(dplyr::filter(ggdendro::segment(ddata), x == xend & x%%1 == 0), "label" = ddata$labels$label, "cluster" = ddata$labels$cluster) 
+  label_data <- dplyr::bind_cols(dplyr::filter(as.data.frame(ggdendro::segment(ddata)), x == xend & x%%1 == 0, x %in% ddata$labels$x, yend == 0), "label" = ddata$labels$label, "cluster" = ddata$labels$cluster) 
 
   dgdata <- ggdendro::segment(ddata) %>% 
     dplyr::left_join(dplyr::select(label_data, c(x, cluster)),

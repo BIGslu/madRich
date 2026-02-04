@@ -19,5 +19,5 @@ clusterWordclouds - gs name and description-based word clouds to aid in cluster 
 
 ```
 install.packages("devtools")
-devtools::install_github("UWISDOM/madRich")
+devtools::install_github("BIGslu/madRich")
 ```
